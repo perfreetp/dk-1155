@@ -9,7 +9,8 @@ import {
   EmotionLevel,
   Visibility,
   Comment,
-  SELF_DEPRECATING_TEMPLATES
+  SELF_DEPRECATING_TEMPLATES,
+  MyInteraction
 } from '../types';
 
 interface AppState {
@@ -17,6 +18,7 @@ interface AppState {
   records: EmotionRecord[];
   squarePosts: SquarePost[];
   favoriteReplies: FavoriteReply[];
+  myInteractions: MyInteraction[];
 
   initializeUser: () => void;
   addRecord: (record: Omit<EmotionRecord, 'id' | 'createdAt' | 'updatedAt' | 'selfDeprecatingCard'>) => EmotionRecord;
@@ -24,12 +26,18 @@ interface AppState {
   deleteRecord: (id: string) => void;
 
   publishToSquare: (recordId: string) => void;
-  addComment: (postId: string, content: string) => void;
-  likeComment: (postId: string, commentId: string) => void;
-  hugPost: (postId: string) => void;
+  updateSquarePost: (recordId: string, updates: Partial<SquarePost>) => void;
+  removeSquarePost: (recordId: string) => void;
+  addComment: (postId: string, content: string, recordId: string) => void;
+  likeComment: (postId: string, commentId: string, recordId: string) => void;
+  hugPost: (postId: string, recordId: string) => void;
 
   addFavoriteReply: (comment: Comment, authorId: string) => void;
   removeFavoriteReply: (id: string) => void;
+
+  addInteraction: (interaction: Omit<MyInteraction, 'id' | 'createdAt'>) => void;
+  getMyInteractions: (type?: 'comment' | 'hug' | 'like') => MyInteraction[];
+  getVisiblePosts: () => SquarePost[];
 
   updateUserSettings: (settings: Partial<UserSettings>) => void;
 }
@@ -59,6 +67,7 @@ export const useAppStore = create<AppState>()(
       records: [],
       squarePosts: [],
       favoriteReplies: [],
+      myInteractions: [],
 
       initializeUser: () => {
         const state = get();
@@ -101,6 +110,11 @@ export const useAppStore = create<AppState>()(
       },
 
       updateRecord: (id, updates) => {
+        const state = get();
+        const oldRecord = state.records.find(r => r.id === id);
+        const wasPublic = oldRecord?.visibility === 'public';
+        const willBePublic = updates.visibility === 'public';
+        
         set((state) => ({
           records: state.records.map((record) =>
             record.id === id
@@ -108,12 +122,21 @@ export const useAppStore = create<AppState>()(
               : record
           )
         }));
+
+        if (wasPublic && !willBePublic) {
+          get().removeSquarePost(id);
+        } else if (!wasPublic && willBePublic) {
+          get().publishToSquare(id);
+        } else if (wasPublic && willBePublic) {
+          get().updateSquarePost(id, updates);
+        }
       },
 
       deleteRecord: (id) => {
         set((state) => ({
           records: state.records.filter((record) => record.id !== id),
-          squarePosts: state.squarePosts.filter((post) => post.recordId !== id)
+          squarePosts: state.squarePosts.filter((post) => post.recordId !== id),
+          myInteractions: state.myInteractions.filter(i => i.postRecordId !== id)
         }));
       },
 
@@ -121,6 +144,9 @@ export const useAppStore = create<AppState>()(
         const state = get();
         const record = state.records.find((r) => r.id === recordId);
         if (!record) return;
+
+        const existingPost = state.squarePosts.find(p => p.recordId === recordId);
+        if (existingPost) return;
 
         const newPost: SquarePost = {
           id: uuidv4(),
@@ -131,17 +157,31 @@ export const useAppStore = create<AppState>()(
           hugs: 0,
           hasHugged: false,
           comments: [],
-          createdAt: new Date().toISOString()
+          createdAt: record.createdAt
         };
 
         set((state) => ({
           squarePosts: [newPost, ...state.squarePosts]
         }));
-
-        get().updateRecord(recordId, { visibility: 'public' });
       },
 
-      addComment: (postId, content) => {
+      updateSquarePost: (recordId, updates) => {
+        set((state) => ({
+          squarePosts: state.squarePosts.map((post) =>
+            post.recordId === recordId
+              ? { ...post, ...updates }
+              : post
+          )
+        }));
+      },
+
+      removeSquarePost: (recordId) => {
+        set((state) => ({
+          squarePosts: state.squarePosts.filter((post) => post.recordId !== recordId)
+        }));
+      },
+
+      addComment: (postId, content, recordId) => {
         const state = get();
         const newComment: Comment = {
           id: uuidv4(),
@@ -160,9 +200,21 @@ export const useAppStore = create<AppState>()(
               : post
           )
         }));
+
+        get().addInteraction({
+          type: 'comment',
+          postId,
+          postRecordId: recordId,
+          targetId: newComment.id,
+          content
+        });
       },
 
-      likeComment: (postId, commentId) => {
+      likeComment: (postId, commentId, recordId) => {
+        const state = get();
+        const post = state.squarePosts.find(p => p.id === postId);
+        const comment = post?.comments.find(c => c.id === commentId);
+        
         set((state) => ({
           squarePosts: state.squarePosts.map((post) => {
             if (post.id !== postId) return post;
@@ -180,9 +232,21 @@ export const useAppStore = create<AppState>()(
             };
           })
         }));
+
+        if (comment && !comment.isLiked) {
+          get().addInteraction({
+            type: 'like',
+            postId,
+            postRecordId: recordId,
+            targetId: commentId
+          });
+        }
       },
 
-      hugPost: (postId) => {
+      hugPost: (postId, recordId) => {
+        const state = get();
+        const post = state.squarePosts.find(p => p.id === postId);
+        
         set((state) => ({
           squarePosts: state.squarePosts.map((post) =>
             post.id === postId
@@ -194,6 +258,14 @@ export const useAppStore = create<AppState>()(
               : post
           )
         }));
+
+        if (post && !post.hasHugged) {
+          get().addInteraction({
+            type: 'hug',
+            postId,
+            postRecordId: recordId
+          });
+        }
       },
 
       addFavoriteReply: (comment, authorId) => {
@@ -216,6 +288,33 @@ export const useAppStore = create<AppState>()(
         }));
       },
 
+      addInteraction: (interaction) => {
+        const newInteraction: MyInteraction = {
+          ...interaction,
+          id: uuidv4(),
+          createdAt: new Date().toISOString()
+        };
+        set((state) => ({
+          myInteractions: [newInteraction, ...state.myInteractions]
+        }));
+      },
+
+      getMyInteractions: (type) => {
+        const state = get();
+        if (type) {
+          return state.myInteractions.filter(i => i.type === type);
+        }
+        return state.myInteractions;
+      },
+
+      getVisiblePosts: () => {
+        const state = get();
+        return state.squarePosts.filter(post => {
+          const record = state.records.find(r => r.id === post.recordId);
+          return record?.visibility === 'public';
+        });
+      },
+
       updateUserSettings: (settings) => {
         set((state) => ({
           user: state.user ? { ...state.user, ...settings } : null
@@ -228,7 +327,8 @@ export const useAppStore = create<AppState>()(
         user: state.user,
         records: state.records,
         squarePosts: state.squarePosts,
-        favoriteReplies: state.favoriteReplies
+        favoriteReplies: state.favoriteReplies,
+        myInteractions: state.myInteractions
       })
     }
   )

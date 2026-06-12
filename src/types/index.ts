@@ -59,6 +59,16 @@ export interface FavoriteReply {
   favoritedAt: string;
 }
 
+export interface MyInteraction {
+  id: string;
+  type: 'comment' | 'hug' | 'like';
+  postId: string;
+  postRecordId: string;
+  targetId?: string;
+  content?: string;
+  createdAt: string;
+}
+
 export const EMOTION_TAGS = [
   '工作压力',
   '人际关系',

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Heart,
@@ -7,45 +7,51 @@ import {
   ThumbsUp,
   Bookmark,
   Send,
-  X
+  X,
+  Clock
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
-import { LEVEL_CONFIG } from '../types';
+import { LEVEL_CONFIG, SquarePost } from '../types';
 import { formatDate, generateMockSquarePosts } from '../utils';
 
 const SquarePage: React.FC = () => {
   const navigate = useNavigate();
   const {
     user,
+    records,
     squarePosts,
     addComment,
     likeComment,
     hugPost,
     addFavoriteReply,
-    favoriteReplies
+    favoriteReplies,
+    myInteractions,
+    getVisiblePosts
   } = useAppStore();
 
-  const [localPosts, setLocalPosts] = useState(squarePosts);
+  const [localPosts, setLocalPosts] = useState<SquarePost[]>([]);
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
-  const [showFavorites, setShowFavorites] = useState(false);
+  const [activeTab, setActiveTab] = useState<'square' | 'my-responses' | 'favorites'>('square');
 
   useEffect(() => {
-    if (squarePosts.length === 0) {
-      const mockPosts = generateMockSquarePosts();
-      setLocalPosts(mockPosts);
-    } else {
-      setLocalPosts(squarePosts);
-    }
-  }, [squarePosts]);
+    const visiblePosts = getVisiblePosts();
+    const mockPosts = generateMockSquarePosts();
+    
+    const allPosts = [...visiblePosts, ...mockPosts];
+    const uniquePosts = allPosts.filter((post, index, self) =>
+      index === self.findIndex((p) => p.id === post.id)
+    );
+    
+    setLocalPosts(uniquePosts);
+  }, [records, squarePosts, getVisiblePosts]);
 
-  const handleAddComment = (postId: string) => {
+  const handleAddComment = (postId: string, recordId: string) => {
     const content = commentInputs[postId];
     if (!content?.trim()) return;
 
-    addComment(postId, content);
+    addComment(postId, content, recordId);
     setCommentInputs({ ...commentInputs, [postId]: '' });
     
-    // 立即更新本地状态
     setLocalPosts(prev => prev.map(post => {
       if (post.id === postId) {
         return {
@@ -68,10 +74,9 @@ const SquarePage: React.FC = () => {
     }));
   };
 
-  const handleLikeComment = (postId: string, commentId: string) => {
-    likeComment(postId, commentId);
+  const handleLikeComment = (postId: string, commentId: string, recordId: string) => {
+    likeComment(postId, commentId, recordId);
     
-    // 立即更新本地状态
     setLocalPosts(prev => prev.map(post => {
       if (post.id === postId) {
         return {
@@ -92,10 +97,9 @@ const SquarePage: React.FC = () => {
     }));
   };
 
-  const handleHug = (postId: string) => {
-    hugPost(postId);
+  const handleHug = (postId: string, recordId: string) => {
+    hugPost(postId, recordId);
     
-    // 立即更新本地状态
     setLocalPosts(prev => prev.map(post => {
       if (post.id === postId) {
         return {
@@ -112,6 +116,16 @@ const SquarePage: React.FC = () => {
     addFavoriteReply(comment, comment.authorId);
   };
 
+  const myResponses = useMemo(() => {
+    return myInteractions
+      .filter(i => i.type === 'comment' || i.type === 'hug')
+      .map(interaction => {
+        const post = localPosts.find(p => p.id === interaction.postId);
+        return { ...interaction, post };
+      })
+      .filter(item => item.post);
+  }, [myInteractions, localPosts]);
+
   const COMFORT_TEMPLATES = [
     '抱抱你，能说出来已经很棒了 💪',
     '我懂这种感受，你不是一个人 🤗',
@@ -119,6 +133,159 @@ const SquarePage: React.FC = () => {
     '崩溃也是一种释放，你已经很坚强了 💪',
     '记得照顾好自己，你值得被爱 ❤️'
   ];
+
+  const renderPostCard = (post: SquarePost, showActions = true) => {
+    const record = records.find(r => r.id === post.recordId);
+    
+    return (
+      <div key={post.id} className="bg-white rounded-2xl shadow-lg p-4">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white font-bold">
+            崩
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-800">崩溃患者</span>
+              <span
+                className="px-2 py-0.5 rounded-full text-xs"
+                style={{
+                  backgroundColor: `${LEVEL_CONFIG[post.level].color}`,
+                  color: '#374151'
+                }}
+              >
+                {LEVEL_CONFIG[post.level].emoji} {LEVEL_CONFIG[post.level].label}
+              </span>
+            </div>
+            <div className="text-xs text-gray-400">
+              {formatDate(post.createdAt, 'MM月dd日 HH:mm')}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 mb-3">
+          {post.tags.map((tag) => (
+            <span
+              key={tag}
+              className="px-2 py-1 bg-orange-50 text-orange-600 rounded-full text-xs"
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+
+        {showActions && (
+          <div className="flex gap-3 mb-3">
+            <button
+              onClick={() => handleHug(post.id, post.recordId)}
+              className={`flex items-center gap-1 px-3 py-2 rounded-full text-sm transition-all ${
+                post.hasHugged
+                  ? 'bg-pink-500 text-white'
+                  : 'bg-pink-50 text-pink-600 hover:bg-pink-100'
+              }`}
+            >
+              <span className="text-lg">🤗</span>
+              <span>抱抱</span>
+              {post.hugs > 0 && <span className="font-medium">{post.hugs}</span>}
+            </button>
+
+            <button className="flex items-center gap-1 px-3 py-2 rounded-full text-sm bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all">
+              <MessageSquare className="w-4 h-4" />
+              <span>安慰</span>
+              {post.comments.length > 0 && (
+                <span className="font-medium">{post.comments.length}</span>
+              )}
+            </button>
+          </div>
+        )}
+
+        {post.comments.length > 0 && (
+          <div className="border-t border-gray-100 pt-3 mt-3 space-y-3">
+            {post.comments.map((comment) => (
+              <div key={comment.id} className="bg-gray-50 rounded-xl p-3">
+                <div className="flex items-start gap-2">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-400 flex items-center justify-center text-white text-xs font-bold">
+                    安
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs font-medium text-gray-700">安慰者</span>
+                      <span className="text-xs text-gray-400">
+                        {formatDate(comment.createdAt, 'MM月dd日')}
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-700">{comment.content}</p>
+                    <div className="flex items-center gap-3 mt-2">
+                      <button
+                        onClick={() => handleLikeComment(post.id, comment.id, post.recordId)}
+                        className={`flex items-center gap-1 text-xs transition-colors ${
+                          comment.isLiked ? 'text-blue-600' : 'text-gray-400 hover:text-blue-600'
+                        }`}
+                      >
+                        <ThumbsUp className={`w-3 h-3 ${comment.isLiked ? 'fill-current' : ''}`} />
+                        <span>{comment.likes || ''}</span>
+                      </button>
+                      {showActions && (
+                        <button
+                          onClick={() => handleFavorite(post.id, comment)}
+                          className="flex items-center gap-1 text-xs text-gray-400 hover:text-pink-600 transition-colors"
+                        >
+                          <Bookmark className="w-3 h-3" />
+                          <span>收藏</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {showActions && (
+          <>
+            <div className="mt-3 flex gap-2">
+              <input
+                type="text"
+                value={commentInputs[post.id] || ''}
+                onChange={(e) =>
+                  setCommentInputs({
+                    ...commentInputs,
+                    [post.id]: e.target.value
+                  })
+                }
+                placeholder="写下安慰的话..."
+                className="flex-1 px-3 py-2 bg-gray-50 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-pink-300"
+              />
+              <button
+                onClick={() => handleAddComment(post.id, post.recordId)}
+                disabled={!commentInputs[post.id]?.trim()}
+                className="px-4 py-2 bg-gradient-to-r from-pink-500 to-orange-500 text-white rounded-full text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg transition-all"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="mt-2 flex flex-wrap gap-1">
+              {COMFORT_TEMPLATES.slice(0, 3).map((template, index) => (
+                <button
+                  key={index}
+                  onClick={() =>
+                    setCommentInputs({
+                      ...commentInputs,
+                      [post.id]: template
+                    })
+                  }
+                  className="px-2 py-1 bg-purple-50 text-purple-600 rounded-full text-xs hover:bg-purple-100 transition-colors"
+                >
+                  {template.split(' ')[0]}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-pink-50 via-white to-orange-50 pb-20">
@@ -128,11 +295,11 @@ const SquarePage: React.FC = () => {
           <p className="text-gray-500 text-sm">在这里，我们互相接住彼此</p>
         </header>
 
-        <div className="mb-6 flex gap-3">
+        <div className="mb-6 flex gap-2">
           <button
-            onClick={() => setShowFavorites(false)}
+            onClick={() => setActiveTab('square')}
             className={`flex-1 py-2 rounded-full text-sm font-medium transition-all ${
-              !showFavorites
+              activeTab === 'square'
                 ? 'bg-gradient-to-r from-pink-500 to-orange-500 text-white'
                 : 'bg-gray-100 text-gray-600'
             }`}
@@ -140,39 +307,35 @@ const SquarePage: React.FC = () => {
             广场动态
           </button>
           <button
-            onClick={() => setShowFavorites(true)}
+            onClick={() => setActiveTab('my-responses')}
             className={`flex-1 py-2 rounded-full text-sm font-medium transition-all flex items-center justify-center gap-2 ${
-              showFavorites
+              activeTab === 'my-responses'
+                ? 'bg-gradient-to-r from-pink-500 to-orange-500 text-white'
+                : 'bg-gray-100 text-gray-600'
+            }`}
+          >
+            <Clock className="w-4 h-4" />
+            我的回应
+            {myResponses.length > 0 && (
+              <span className="bg-white text-pink-500 rounded-full px-1.5 text-xs">
+                {myResponses.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('favorites')}
+            className={`flex-1 py-2 rounded-full text-sm font-medium transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'favorites'
                 ? 'bg-gradient-to-r from-pink-500 to-orange-500 text-white'
                 : 'bg-gray-100 text-gray-600'
             }`}
           >
             <Bookmark className="w-4 h-4" />
-            我的收藏
+            收藏
           </button>
         </div>
 
-        {showFavorites ? (
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">温暖语录收藏 🌸</h3>
-            {favoriteReplies.length === 0 ? (
-              <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
-                <div className="text-5xl mb-4">📝</div>
-                <p className="text-gray-500">还没有收藏的温暖语录</p>
-                <p className="text-gray-400 text-sm mt-2">去广场收藏那些打动你的话吧</p>
-              </div>
-            ) : (
-              favoriteReplies.map((favorite) => (
-                <div key={favorite.id} className="bg-white rounded-2xl shadow-lg p-4">
-                  <p className="text-gray-700 italic">"{favorite.content}"</p>
-                  <div className="text-xs text-gray-400 mt-2">
-                    收藏于 {formatDate(favorite.favoritedAt, 'MM月dd日 HH:mm')}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        ) : (
+        {activeTab === 'square' && (
           <div className="space-y-4">
             <div className="bg-white rounded-2xl shadow-lg p-4">
               <div className="flex items-center gap-2 mb-3">
@@ -185,146 +348,7 @@ const SquarePage: React.FC = () => {
               </p>
             </div>
 
-            {localPosts.map((post) => (
-              <div key={post.id} className="bg-white rounded-2xl shadow-lg p-4">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white font-bold">
-                    崩
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-gray-800">崩溃患者</span>
-                      <span
-                        className="px-2 py-0.5 rounded-full text-xs"
-                        style={{
-                          backgroundColor: `${LEVEL_CONFIG[post.level].color}`,
-                          color: '#374151'
-                        }}
-                      >
-                        {LEVEL_CONFIG[post.level].emoji} {LEVEL_CONFIG[post.level].label}
-                      </span>
-                    </div>
-                    <div className="text-xs text-gray-400">
-                      {formatDate(post.createdAt, 'MM月dd日 HH:mm')}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {post.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="px-2 py-1 bg-orange-50 text-orange-600 rounded-full text-xs"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-
-                <div className="flex gap-3 mb-3">
-                  <button
-                    onClick={() => handleHug(post.id)}
-                    className={`flex items-center gap-1 px-3 py-2 rounded-full text-sm transition-all ${
-                      post.hasHugged
-                        ? 'bg-pink-500 text-white'
-                        : 'bg-pink-50 text-pink-600 hover:bg-pink-100'
-                    }`}
-                  >
-                    <span className="text-lg">🤗</span>
-                    <span>抱抱</span>
-                    {post.hugs > 0 && <span className="font-medium">{post.hugs}</span>}
-                  </button>
-
-                  <button className="flex items-center gap-1 px-3 py-2 rounded-full text-sm bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all">
-                    <MessageSquare className="w-4 h-4" />
-                    <span>安慰</span>
-                    {post.comments.length > 0 && (
-                      <span className="font-medium">{post.comments.length}</span>
-                    )}
-                  </button>
-                </div>
-
-                {post.comments.length > 0 && (
-                  <div className="border-t border-gray-100 pt-3 mt-3 space-y-3">
-                    {post.comments.map((comment) => (
-                      <div key={comment.id} className="bg-gray-50 rounded-xl p-3">
-                        <div className="flex items-start gap-2">
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-400 flex items-center justify-center text-white text-xs font-bold">
-                            安
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="text-xs font-medium text-gray-700">安慰者</span>
-                              <span className="text-xs text-gray-400">
-                                {formatDate(comment.createdAt, 'MM月dd日')}
-                              </span>
-                            </div>
-                            <p className="text-sm text-gray-700">{comment.content}</p>
-                            <div className="flex items-center gap-3 mt-2">
-                              <button
-                                onClick={() => handleLikeComment(post.id, comment.id)}
-                                className={`flex items-center gap-1 text-xs transition-colors ${
-                                  comment.isLiked ? 'text-blue-600' : 'text-gray-400 hover:text-blue-600'
-                                }`}
-                              >
-                                <ThumbsUp className={`w-3 h-3 ${comment.isLiked ? 'fill-current' : ''}`} />
-                                <span>{comment.likes || ''}</span>
-                              </button>
-                              <button
-                                onClick={() => handleFavorite(post.id, comment)}
-                                className="flex items-center gap-1 text-xs text-gray-400 hover:text-pink-600 transition-colors"
-                              >
-                                <Bookmark className="w-3 h-3" />
-                                <span>收藏</span>
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="mt-3 flex gap-2">
-                  <input
-                    type="text"
-                    value={commentInputs[post.id] || ''}
-                    onChange={(e) =>
-                      setCommentInputs({
-                        ...commentInputs,
-                        [post.id]: e.target.value
-                      })
-                    }
-                    placeholder="写下安慰的话..."
-                    className="flex-1 px-3 py-2 bg-gray-50 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-pink-300"
-                  />
-                  <button
-                    onClick={() => handleAddComment(post.id)}
-                    disabled={!commentInputs[post.id]?.trim()}
-                    className="px-4 py-2 bg-gradient-to-r from-pink-500 to-orange-500 text-white rounded-full text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg transition-all"
-                  >
-                    <Send className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {COMFORT_TEMPLATES.slice(0, 3).map((template, index) => (
-                    <button
-                      key={index}
-                      onClick={() =>
-                        setCommentInputs({
-                          ...commentInputs,
-                          [post.id]: template
-                        })
-                      }
-                      className="px-2 py-1 bg-purple-50 text-purple-600 rounded-full text-xs hover:bg-purple-100 transition-colors"
-                    >
-                      {template.split(' ')[0]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
+            {localPosts.map(post => renderPostCard(post))}
 
             {localPosts.length === 0 && (
               <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
@@ -337,6 +361,85 @@ const SquarePage: React.FC = () => {
                 >
                   去打卡
                 </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'my-responses' && (
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">我的回应记录 🌸</h3>
+            
+            {myResponses.length > 0 ? (
+              myResponses.map((response) => (
+                <div key={response.id} className="bg-white rounded-2xl shadow-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-600">
+                      {response.type === 'comment' ? '💬 安慰' : '🤗 抱抱'}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      {formatDate(response.createdAt, 'MM月dd日 HH:mm')}
+                    </span>
+                  </div>
+                  
+                  {response.type === 'comment' && response.content && (
+                    <p className="text-gray-700 mb-2">"{response.content}"</p>
+                  )}
+                  
+                  {response.post && (
+                    <div className="bg-gray-50 rounded-xl p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-lg">{LEVEL_CONFIG[response.post.level].emoji}</span>
+                        <span className="text-xs text-gray-500">
+                          崩溃等级: {LEVEL_CONFIG[response.post.level].label}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {response.post.tags.map(tag => (
+                          <span key={tag} className="px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded text-xs">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                      <button
+                        onClick={() => {
+                          setActiveTab('square');
+                        }}
+                        className="mt-2 text-xs text-blue-500 hover:underline"
+                      >
+                        查看原动态 →
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
+                <div className="text-5xl mb-4">📝</div>
+                <p className="text-gray-500">还没有回应过任何人</p>
+                <p className="text-gray-400 text-sm mt-2">去广场给崩溃的朋友一些温暖吧</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'favorites' && (
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">温暖语录收藏 🌸</h3>
+            {favoriteReplies.length > 0 ? (
+              favoriteReplies.map((favorite) => (
+                <div key={favorite.id} className="bg-white rounded-2xl shadow-lg p-4">
+                  <p className="text-gray-700 italic">"{favorite.content}"</p>
+                  <div className="text-xs text-gray-400 mt-2">
+                    收藏于 {formatDate(favorite.favoritedAt, 'MM月dd日 HH:mm')}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
+                <div className="text-5xl mb-4">📝</div>
+                <p className="text-gray-500">还没有收藏的温暖语录</p>
+                <p className="text-gray-400 text-sm mt-2">去广场收藏那些打动你的话吧</p>
               </div>
             )}
           </div>

@@ -28,7 +28,7 @@ import {
 
 const StatsPage: React.FC = () => {
   const navigate = useNavigate();
-  const { records } = useAppStore();
+  const { records, squarePosts } = useAppStore();
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
@@ -44,6 +44,46 @@ const StatsPage: React.FC = () => {
     if (!selectedTag) return [];
     return records.filter(r => r.tags.includes(selectedTag));
   }, [records, selectedTag]);
+  
+  const privacyStats = useMemo(() => {
+    const privateCount = records.filter(r => r.visibility === 'private').length;
+    const friendsCount = records.filter(r => r.visibility === 'friends').length;
+    const publicCount = records.filter(r => r.visibility === 'public').length;
+    return [
+      { name: '仅自己', count: privateCount, color: '#9575CD' },
+      { name: '好友圈', count: friendsCount, color: '#4FC3F7' },
+      { name: '公开', count: publicCount, color: '#81C784' }
+    ];
+  }, [records]);
+  
+  const shareEffectStats = useMemo(() => {
+    const publicRecords = records.filter(r => r.visibility === 'public');
+    let totalHugs = 0;
+    let totalComments = 0;
+    const tagHugMap: Record<string, number> = {};
+    const tagCommentMap: Record<string, number> = {};
+    
+    publicRecords.forEach(record => {
+      const post = squarePosts.find(p => p.recordId === record.id);
+      if (post) {
+        totalHugs += post.hugs;
+        totalComments += post.comments.length;
+        record.tags.forEach(tag => {
+          tagHugMap[tag] = (tagHugMap[tag] || 0) + post.hugs;
+          tagCommentMap[tag] = (tagCommentMap[tag] || 0) + post.comments.length;
+        });
+      }
+    });
+    
+    const tagEngagement = Object.keys(tagHugMap).map(tag => ({
+      tag,
+      hugs: tagHugMap[tag],
+      comments: tagCommentMap[tag] || 0,
+      total: (tagHugMap[tag] || 0) + (tagCommentMap[tag] || 0)
+    })).sort((a, b) => b.total - a.total);
+    
+    return { totalHugs, totalComments, tagEngagement };
+  }, [records, squarePosts]);
 
   const COLORS = ['#FF8A80', '#81C784', '#9575CD', '#4FC3F7', '#FFD54F', '#FF8A65', '#4DB6AC', '#BA68C8', '#7986CB', '#4DD0E1'];
   
@@ -372,6 +412,91 @@ const StatsPage: React.FC = () => {
           ) : (
             <div className="h-48 flex items-center justify-center text-gray-400 text-sm">
               当月还没有记录
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-lg p-4 mb-6">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+            <span className="text-xl">🔒</span>
+            隐私分布
+          </h3>
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            {privacyStats.map((stat) => (
+              <div
+                key={stat.name}
+                className="text-center p-3 rounded-xl"
+                style={{ backgroundColor: `${stat.color}20` }}
+              >
+                <div className="text-2xl font-bold" style={{ color: stat.color }}>
+                  {stat.count}
+                </div>
+                <div className="text-xs text-gray-600 mt-1">{stat.name}</div>
+              </div>
+            ))}
+          </div>
+          {records.length > 0 && (
+            <ResponsiveContainer width="100%" height={150}>
+              <PieChart>
+                <Pie
+                  data={privacyStats.filter(s => s.count > 0)}
+                  dataKey="count"
+                  nameKey="name"
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={60}
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                >
+                  {privacyStats.filter(s => s.count > 0).map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-lg p-4 mb-6">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+            <span className="text-xl">📢</span>
+            分享效果
+          </h3>
+          {shareEffectStats.totalHugs > 0 || shareEffectStats.totalComments > 0 ? (
+            <>
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div className="bg-pink-50 rounded-xl p-3 text-center">
+                  <div className="text-2xl font-bold text-pink-500">{shareEffectStats.totalHugs}</div>
+                  <div className="text-xs text-gray-600">收到抱抱</div>
+                </div>
+                <div className="bg-blue-50 rounded-xl p-3 text-center">
+                  <div className="text-2xl font-bold text-blue-500">{shareEffectStats.totalComments}</div>
+                  <div className="text-xs text-gray-600">收到安慰</div>
+                </div>
+              </div>
+              
+              {shareEffectStats.tagEngagement.length > 0 && (
+                <div>
+                  <p className="text-sm text-gray-600 mb-2">最容易得到安慰的标签：</p>
+                  <div className="space-y-2">
+                    {shareEffectStats.tagEngagement.slice(0, 3).map((item, index) => (
+                      <div key={item.tag} className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-orange-100 text-orange-600 text-xs flex items-center justify-center font-bold">
+                          {index + 1}
+                        </span>
+                        <span className="flex-1 text-sm text-gray-700">{item.tag}</span>
+                        <span className="text-xs text-gray-400">
+                          🤗 {item.hugs} 💬 {item.comments}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="text-center py-6 text-gray-400 text-sm">
+              还没有公开记录，分享后查看效果
             </div>
           )}
         </div>
