@@ -82,7 +82,7 @@ const StatsPage: React.FC = () => {
         total: (tagHugMap[tag] || 0) + (tagCommentMap[tag] || 0)
       })).sort((a, b) => b.total - a.total);
       
-      return { totalHugs, totalComments, tagEngagement };
+      return { totalHugs, totalComments, tagEngagement, records: filteredRecords };
     };
     
     const publicRecords = records.filter(r => r.visibility === 'public');
@@ -474,9 +474,19 @@ const StatsPage: React.FC = () => {
           
           <div className="space-y-4">
             <div className="border-b pb-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Globe className="w-4 h-4 text-green-500" />
-                <span className="text-sm font-medium text-gray-700">公开广场</span>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-green-500" />
+                  <span className="text-sm font-medium text-gray-700">公开广场</span>
+                </div>
+                {shareEffectStats.public.records.length > 0 && (
+                  <button
+                    onClick={() => navigate('/square')}
+                    className="text-xs text-blue-500 hover:underline"
+                  >
+                    查看全部 →
+                  </button>
+                )}
               </div>
               {shareEffectStats.public.totalHugs > 0 || shareEffectStats.public.totalComments > 0 ? (
                 <>
@@ -513,9 +523,19 @@ const StatsPage: React.FC = () => {
             </div>
 
             <div>
-              <div className="flex items-center gap-2 mb-3">
-                <Users className="w-4 h-4 text-blue-500" />
-                <span className="text-sm font-medium text-gray-700">好友圈</span>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-blue-500" />
+                  <span className="text-sm font-medium text-gray-700">好友圈</span>
+                </div>
+                {shareEffectStats.friends.records.length > 0 && (
+                  <button
+                    onClick={() => navigate('/square')}
+                    className="text-xs text-blue-500 hover:underline"
+                  >
+                    查看全部 →
+                  </button>
+                )}
               </div>
               {shareEffectStats.friends.totalHugs > 0 || shareEffectStats.friends.totalComments > 0 ? (
                 <>

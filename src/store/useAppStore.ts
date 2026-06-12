@@ -60,12 +60,87 @@ const STORAGE_KEYS = {
   FAVORITES: 'today_breakdown_favorites'
 };
 
+const DEFAULT_SQUARE_POSTS: SquarePost[] = [
+  {
+    id: 'default-1',
+    recordId: 'mock-1',
+    authorId: 'user-1',
+    level: 3 as EmotionLevel,
+    tags: ['工作压力', '人际关系'],
+    hugs: 12,
+    hasHugged: false,
+    comments: [
+      {
+        id: 'dc1',
+        postId: 'default-1',
+        authorId: 'user-2',
+        content: '抱抱你，工作上的事真的很让人崩溃，但你能坚持说出来已经很棒了 💪',
+        likes: 5,
+        isLiked: false,
+        createdAt: new Date(Date.now() - 3600000).toISOString()
+      },
+      {
+        id: 'dc2',
+        postId: 'default-1',
+        authorId: 'user-3',
+        content: '我懂这种感受，甲方爸爸的需求永远变来变去，但这就是成长啊',
+        likes: 3,
+        isLiked: false,
+        createdAt: new Date(Date.now() - 7200000).toISOString()
+      }
+    ],
+    createdAt: new Date(Date.now() - 86400000).toISOString()
+  },
+  {
+    id: 'default-2',
+    recordId: 'mock-2',
+    authorId: 'user-4',
+    level: 4 as EmotionLevel,
+    tags: ['感情问题', '未来焦虑'],
+    hugs: 23,
+    hasHugged: false,
+    comments: [
+      {
+        id: 'dc3',
+        postId: 'default-2',
+        authorId: 'user-5',
+        content: '感情的坎真的很难过，但记住，你值得被爱，也会找到属于自己的幸福 🤗',
+        likes: 8,
+        isLiked: false,
+        createdAt: new Date(Date.now() - 5400000).toISOString()
+      }
+    ],
+    createdAt: new Date(Date.now() - 172800000).toISOString()
+  },
+  {
+    id: 'default-3',
+    recordId: 'mock-3',
+    authorId: 'user-6',
+    level: 2 as EmotionLevel,
+    tags: ['学业负担'],
+    hugs: 8,
+    hasHugged: false,
+    comments: [
+      {
+        id: 'dc4',
+        postId: 'default-3',
+        authorId: 'user-7',
+        content: '考试季大家都压力山大，坚持就是胜利！你已经做得很好了 🌟',
+        likes: 2,
+        isLiked: false,
+        createdAt: new Date(Date.now() - 10800000).toISOString()
+      }
+    ],
+    createdAt: new Date(Date.now() - 259200000).toISOString()
+  }
+];
+
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
       user: null,
       records: [],
-      squarePosts: [],
+      squarePosts: DEFAULT_SQUARE_POSTS,
       favoriteReplies: [],
       myInteractions: [],
 

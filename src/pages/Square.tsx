@@ -38,22 +38,48 @@ const SquarePage: React.FC = () => {
   const [responseFilter, setResponseFilter] = useState<'all' | 'comment' | 'hug' | 'like'>('all');
   const [selectedRecord, setSelectedRecord] = useState<EmotionRecord | null>(null);
   const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
+  const [scrollPosition, setScrollPosition] = useState<number>(0);
   const postRefs = useRef<Record<string, HTMLDivElement>>({});
 
   useEffect(() => {
     const visiblePosts = getVisiblePosts();
-    const friendsPosts = squarePosts.filter(post => {
-      const record = records.find(r => r.id === post.recordId);
-      return record?.visibility === 'friends';
-    });
     
     const allPosts = [...visiblePosts, ...squarePosts];
     const uniquePosts = allPosts.filter((post, index, self) =>
       index === self.findIndex((p) => p.id === post.id)
     );
     
-    setLocalPosts(uniquePosts);
-  }, [records, squarePosts, getVisiblePosts]);
+    const postsWithInteractions = uniquePosts.map(post => {
+      const userHugInteraction = myInteractions.find(
+        i => i.postId === post.id && i.type === 'hug'
+      );
+      const userLikeInteractions = myInteractions.filter(
+        i => i.postId === post.id && i.type === 'like'
+      );
+      
+      let updatedPost = { ...post };
+      
+      if (userHugInteraction) {
+        updatedPost = { ...updatedPost, hasHugged: true };
+      }
+      
+      const userCommentIds = myInteractions
+        .filter(i => i.postId === post.id && i.type === 'comment')
+        .map(i => i.targetId);
+      
+      updatedPost = {
+        ...updatedPost,
+        comments: post.comments.map(comment => ({
+          ...comment,
+          isLiked: userLikeInteractions.some(i => i.targetId === comment.id)
+        }))
+      };
+      
+      return updatedPost;
+    });
+    
+    setLocalPosts(postsWithInteractions);
+  }, [records, squarePosts, getVisiblePosts, myInteractions]);
 
   useEffect(() => {
     if (highlightedPostId && postRefs.current[highlightedPostId]) {
@@ -519,12 +545,15 @@ const SquarePage: React.FC = () => {
                         <button
                           onClick={() => {
                             if (response.post) {
+                              const targetVisibility = response.record?.visibility === 'public' ? 'public' : 'friends';
+                              setScrollPosition(window.scrollY);
                               setHighlightedPostId(response.post.id);
-                              setActiveTab(response.record?.visibility === 'public' ? 'public' : 'friends');
+                              setActiveTab(targetVisibility);
                               setTimeout(() => {
                                 if (postRefs.current[response.post!.id]) {
                                   postRefs.current[response.post!.id].scrollIntoView({ behavior: 'smooth', block: 'center' });
                                 }
+                                window.scrollTo(0, 0);
                               }, 100);
                             }
                           }}
