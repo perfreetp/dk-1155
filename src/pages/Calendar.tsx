@@ -6,10 +6,14 @@ import {
   Heart,
   Lock,
   X,
-  Trash2
+  Trash2,
+  Play,
+  Pause,
+  Users,
+  Globe
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
-import { LEVEL_CONFIG } from '../types';
+import { LEVEL_CONFIG, Visibility } from '../types';
 import { formatDate } from '../utils';
 import {
   startOfMonth,
@@ -25,7 +29,7 @@ import {
 
 const CalendarPage: React.FC = () => {
   const navigate = useNavigate();
-  const { records, deleteRecord } = useAppStore();
+  const { records, deleteRecord, updateRecord } = useAppStore();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedRecord, setSelectedRecord] = useState<any>(null);
 
@@ -53,6 +57,11 @@ const CalendarPage: React.FC = () => {
       deleteRecord(id);
       setSelectedRecord(null);
     }
+  };
+
+  const handleVisibilityChange = (id: string, visibility: Visibility) => {
+    updateRecord(id, { visibility });
+    setSelectedRecord((prev: any) => prev ? { ...prev, visibility } : null);
   };
 
   return (
@@ -219,9 +228,40 @@ const CalendarPage: React.FC = () => {
                 </div>
               )}
 
+              {selectedRecord.voiceUrl && (
+                <div>
+                  <div className="text-xs text-gray-500 mb-2">语音记录</div>
+                  <VoicePlayer voiceUrl={selectedRecord.voiceUrl} />
+                </div>
+              )}
+
               <div className="bg-gradient-to-r from-orange-50 to-pink-50 rounded-xl p-4">
                 <div className="text-xs text-gray-500 mb-1">自嘲卡片</div>
                 <p className="text-gray-700 italic">"{selectedRecord.selfDeprecatingCard}"</p>
+              </div>
+
+              <div>
+                <div className="text-xs text-gray-500 mb-2">隐私设置</div>
+                <div className="flex gap-2">
+                  {([
+                    { value: 'private' as Visibility, label: '仅自己', icon: Lock },
+                    { value: 'friends' as Visibility, label: '好友圈', icon: Users },
+                    { value: 'public' as Visibility, label: '公开', icon: Globe }
+                  ]).map((option) => (
+                    <button
+                      key={option.value}
+                      onClick={() => handleVisibilityChange(selectedRecord.id, option.value)}
+                      className={`flex-1 flex items-center justify-center gap-1 p-2 rounded-lg text-xs transition-all ${
+                        selectedRecord.visibility === option.value
+                          ? 'bg-gradient-to-r from-purple-400 to-pink-400 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      <option.icon className="w-3 h-3" />
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -286,10 +326,60 @@ const CalendarPage: React.FC = () => {
   );
 };
 
-export default CalendarPage;
+const VoicePlayer: React.FC<{ voiceUrl: string }> = ({ voiceUrl }) => {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const audioRef = React.useRef<HTMLAudioElement>(null);
 
-const Users = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-  </svg>
-);
+  const togglePlayback = () => {
+    if (!audioRef.current) return;
+    if (isPlaying) {
+      audioRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      audioRef.current.play();
+      setIsPlaying(true);
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      const progress = (audioRef.current.currentTime / audioRef.current.duration) * 100;
+      setProgress(progress);
+    }
+  };
+
+  const handleEnded = () => {
+    setIsPlaying(false);
+    setProgress(0);
+  };
+
+  return (
+    <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-4">
+      <div className="flex items-center gap-3">
+        <button
+          onClick={togglePlayback}
+          className="w-12 h-12 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 text-white flex items-center justify-center hover:shadow-lg transition-all"
+        >
+          {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+        </button>
+        <div className="flex-1">
+          <div className="h-2 bg-white rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full transition-all"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+      </div>
+      <audio
+        ref={audioRef}
+        src={voiceUrl}
+        onTimeUpdate={handleTimeUpdate}
+        onEnded={handleEnded}
+      />
+    </div>
+  );
+};
+
+export default CalendarPage;

@@ -45,6 +45,48 @@ export const calculateTagStats = (records: EmotionRecord[]) => {
     .sort((a, b) => b.count - a.count);
 };
 
+export const calculateTimeSlotStats = (records: EmotionRecord[]) => {
+  const timeSlots = {
+    '深夜 0-6点': 0,
+    '早上 6-12点': 0,
+    '下午 12-18点': 0,
+    '晚上 18-24点': 0
+  };
+  
+  const avgLevels = {
+    '深夜 0-6点': [] as number[],
+    '早上 6-12点': [] as number[],
+    '下午 12-18点': [] as number[],
+    '晚上 18-24点': [] as number[]
+  };
+  
+  records.forEach((record) => {
+    const hour = new Date(record.createdAt).getHours();
+    let slot = '';
+    
+    if (hour >= 0 && hour < 6) {
+      slot = '深夜 0-6点';
+    } else if (hour >= 6 && hour < 12) {
+      slot = '早上 6-12点';
+    } else if (hour >= 12 && hour < 18) {
+      slot = '下午 12-18点';
+    } else {
+      slot = '晚上 18-24点';
+    }
+    
+    timeSlots[slot as keyof typeof timeSlots]++;
+    avgLevels[slot as keyof typeof avgLevels].push(record.level);
+  });
+  
+  return Object.entries(timeSlots).map(([slot, count]) => ({
+    slot,
+    count,
+    avgLevel: avgLevels[slot as keyof typeof avgLevels].length > 0
+      ? avgLevels[slot as keyof typeof avgLevels].reduce((a, b) => a + b, 0) / avgLevels[slot as keyof typeof avgLevels].length
+      : 0
+  }));
+};
+
 export const calculateMonthlyTrend = (records: EmotionRecord[], month: Date) => {
   const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
   const trend = [];

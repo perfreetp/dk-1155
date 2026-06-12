@@ -11,7 +11,12 @@ import {
   Heart,
   Lock,
   Users,
-  Globe
+  Globe,
+  Upload,
+  Play,
+  Pause,
+  Trash2,
+  X
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import {
@@ -33,6 +38,102 @@ const HomePage: React.FC = () => {
   const [visibility, setVisibility] = useState<Visibility>('private');
   const [showSuccess, setShowSuccess] = useState(false);
   const [currentCard, setCurrentCard] = useState('');
+  
+  // 语音相关state
+  const [isRecording, setIsRecording] = useState(false);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string>('');
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [audioRef, setAudioRef] = useState<HTMLAudioElement | null>(null);
+  
+  // 录音功能
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const chunks: BlobPart[] = [];
+      
+      recorder.ondataavailable = (e) => {
+        chunks.push(e.data);
+      };
+      
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        setAudioBlob(blob);
+        setAudioUrl(URL.createObjectURL(blob));
+        stream.getTracks().forEach(track => track.stop());
+      };
+      
+      setMediaRecorder(recorder);
+      recorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+      
+      // 计时器
+      const timer = setInterval(() => {
+        setRecordingTime(prev => {
+          if (prev >= 30) {
+            stopRecording();
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, 1000);
+      
+      (recorder as any).timer = timer;
+    } catch (err) {
+      console.error('无法访问麦克风:', err);
+      alert('请允许使用麦克风权限');
+    }
+  };
+  
+  const stopRecording = () => {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+      mediaRecorder.stop();
+      setIsRecording(false);
+      if ((mediaRecorder as any).timer) {
+        clearInterval((mediaRecorder as any).timer);
+      }
+    }
+  };
+  
+  const deleteRecording = () => {
+    if (audioUrl) {
+      URL.revokeObjectURL(audioUrl);
+    }
+    setAudioBlob(null);
+    setAudioUrl('');
+    setRecordingTime(0);
+  };
+  
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith('audio/')) {
+      setAudioBlob(file);
+      setAudioUrl(URL.createObjectURL(file));
+    }
+  };
+  
+  const togglePlayback = () => {
+    if (!audioRef) return;
+    if (isPlaying) {
+      audioRef.pause();
+      setIsPlaying(false);
+    } else {
+      audioRef.play();
+      setIsPlaying(true);
+    }
+  };
+  
+  useEffect(() => {
+    return () => {
+      if (audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -53,8 +154,17 @@ const HomePage: React.FC = () => {
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!level) return;
+
+    let voiceDataUrl = '';
+    if (audioBlob) {
+      const reader = new FileReader();
+      voiceDataUrl = await new Promise((resolve) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(audioBlob);
+      });
+    }
 
     const newRecord = addRecord({
       date: formatDate(new Date()),
@@ -62,7 +172,8 @@ const HomePage: React.FC = () => {
       trigger,
       tags,
       content,
-      visibility
+      visibility,
+      voiceUrl: voiceDataUrl || undefined
     });
 
     setShowSuccess(true);
@@ -77,6 +188,7 @@ const HomePage: React.FC = () => {
       setTrigger('');
       setTags([]);
       setContent('');
+      deleteRecording();
     }, 3000);
   };
 
@@ -211,6 +323,74 @@ const HomePage: React.FC = () => {
               <div className="text-right text-xs text-gray-400 mt-1">
                 {content.length} 字
               </div>
+            </section>
+
+            <section className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+              <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <Mic className="w-5 h-5 text-blue-500" />
+                语音记录 <span className="text-sm font-normal text-gray-500">(可选)</span>
+              </h2>
+              
+              {!audioUrl ? (
+                <div className="space-y-4">
+                  <div className="flex gap-3">
+                    <button
+                      onClick={isRecording ? stopRecording : startRecording}
+                      className={`flex-1 flex items-center justify-center gap-2 py-4 rounded-xl font-medium transition-all ${
+                        isRecording
+                          ? 'bg-red-500 text-white animate-pulse'
+                          : 'bg-gradient-to-r from-blue-500 to-purple-500 text-white hover:shadow-lg'
+                      }`}
+                    >
+                      <Mic className={`w-5 h-5 ${isRecording ? 'animate-pulse' : ''}`} />
+                      {isRecording ? `停止录音 ${recordingTime}s/30s` : '开始录音'}
+                    </button>
+                    
+                    <label className="flex-1 flex items-center justify-center gap-2 py-4 rounded-xl font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all cursor-pointer">
+                      <Upload className="w-5 h-5" />
+                      <span>上传语音</span>
+                      <input
+                        type="file"
+                        accept="audio/*"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                  
+                  <p className="text-xs text-gray-400 text-center">
+                    最长录制30秒，或上传已有的语音文件
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={togglePlayback}
+                      className="w-12 h-12 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 text-white flex items-center justify-center hover:shadow-lg transition-all"
+                    >
+                      {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                    </button>
+                    <div className="flex-1">
+                      <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full" style={{ width: '60%' }} />
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">语音已录制</p>
+                    </div>
+                    <button
+                      onClick={deleteRecording}
+                      className="p-2 text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                  <audio
+                    ref={(el) => el && setAudioRef(el)}
+                    src={audioUrl}
+                    onEnded={() => setIsPlaying(false)}
+                  />
+                </div>
+              )}
             </section>
 
             <section className="bg-white rounded-2xl shadow-lg p-6 mb-6">

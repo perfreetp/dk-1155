@@ -1,12 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart, Download, Calendar, Tag } from 'lucide-react';
+import { Heart, Download, Calendar, Tag, X } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { LEVEL_CONFIG } from '../types';
 import {
   calculateWeeklyStats,
   calculateTagStats,
   calculateMonthlyTrend,
+  calculateTimeSlotStats,
   exportToJSON,
   formatDate
 } from '../utils';
@@ -29,15 +30,27 @@ const StatsPage: React.FC = () => {
   const navigate = useNavigate();
   const { records } = useAppStore();
   const [selectedMonth, setSelectedMonth] = useState(new Date());
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
   const weeklyStats = useMemo(() => calculateWeeklyStats(records), [records]);
   const tagStats = useMemo(() => calculateTagStats(records), [records]);
+  const timeSlotStats = useMemo(() => calculateTimeSlotStats(records), [records]);
   const monthlyTrend = useMemo(
     () => calculateMonthlyTrend(records, selectedMonth),
     [records, selectedMonth]
   );
+  
+  const filteredRecords = useMemo(() => {
+    if (!selectedTag) return [];
+    return records.filter(r => r.tags.includes(selectedTag));
+  }, [records, selectedTag]);
 
   const COLORS = ['#FF8A80', '#81C784', '#9575CD', '#4FC3F7', '#FFD54F', '#FF8A65', '#4DB6AC', '#BA68C8', '#7986CB', '#4DD0E1'];
+  
+  const getHighestTimeSlot = () => {
+    const max = timeSlotStats.reduce((max, slot) => slot.count > max.count ? slot : max, timeSlotStats[0]);
+    return max && max.count > 0 ? max.slot : null;
+  };
 
   const totalRecords = records.length;
   const avgLevel = totalRecords > 0
@@ -210,6 +223,48 @@ const StatsPage: React.FC = () => {
 
         <div className="bg-white rounded-2xl shadow-lg p-4 mb-6">
           <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+            <span className="text-xl">⏰</span>
+            高发时段分析
+          </h3>
+          {getHighestTimeSlot() && (
+            <div className="bg-gradient-to-r from-orange-100 to-pink-100 rounded-xl p-3 mb-4">
+              <p className="text-sm text-gray-700">
+                💡 你最常在 <span className="font-bold text-orange-600">{getHighestTimeSlot()}</span> 崩溃
+              </p>
+            </div>
+          )}
+          {timeSlotStats.some((s) => s.count > 0) ? (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={timeSlotStats}>
+                <XAxis dataKey="slot" tick={{ fontSize: 11 }} angle={-15} textAnchor="end" height={60} />
+                <YAxis tick={{ fontSize: 12 }} />
+                <Tooltip
+                  contentStyle={{
+                    borderRadius: '12px',
+                    border: 'none',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                  }}
+                  formatter={(value: number, name: string) => [
+                    `${value}次崩溃`,
+                    '崩溃次数'
+                  ]}
+                />
+                <Bar
+                  dataKey="count"
+                  fill="#9575CD"
+                  radius={[8, 8, 0, 0]}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-48 flex items-center justify-center text-gray-400 text-sm">
+              还没有时段数据
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-lg p-4 mb-6">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
             <Tag className="w-5 h-5 text-purple-500" />
             压力来源分析
           </h3>
@@ -240,16 +295,20 @@ const StatsPage: React.FC = () => {
               </ResponsiveContainer>
               <div className="space-y-2 lg:w-1/2">
                 {tagStats.slice(0, 6).map((stat, index) => (
-                  <div key={stat.tag} className="flex items-center gap-2">
+                  <button
+                    key={stat.tag}
+                    onClick={() => setSelectedTag(stat.tag)}
+                    className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
                     <div
                       className="w-3 h-3 rounded-full"
                       style={{ backgroundColor: COLORS[index % COLORS.length] }}
                     />
-                    <span className="text-sm text-gray-700 flex-1">{stat.tag}</span>
+                    <span className="text-sm text-gray-700 flex-1 text-left">{stat.tag}</span>
                     <span className="text-sm font-medium text-gray-800">
                       {stat.count}次
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
@@ -338,6 +397,66 @@ const StatsPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {selectedTag && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50 p-4"
+          onClick={() => setSelectedTag(null)}
+        >
+          <div
+            className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md max-h-screen overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 bg-white p-4 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">{selectedTag} 回顾</h3>
+                <p className="text-xs text-gray-500">{filteredRecords.length} 条相关记录</p>
+              </div>
+              <button
+                onClick={() => setSelectedTag(null)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+            
+            <div className="p-4 space-y-4">
+              {filteredRecords.length > 0 ? (
+                filteredRecords.map((record) => (
+                  <div key={record.id} className="bg-gray-50 rounded-xl p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-2xl">{LEVEL_CONFIG[record.level].emoji}</span>
+                      <div>
+                        <div className="font-medium text-gray-800">{LEVEL_CONFIG[record.level].label}</div>
+                        <div className="text-xs text-gray-500">{formatDate(record.date, 'MM月dd日')}</div>
+                      </div>
+                    </div>
+                    {record.trigger && (
+                      <div className="mt-3">
+                        <div className="text-xs text-gray-500 mb-1">触发事件</div>
+                        <p className="text-sm text-gray-700">{record.trigger}</p>
+                      </div>
+                    )}
+                    {record.content && (
+                      <div className="mt-2">
+                        <div className="text-xs text-gray-500 mb-1">心情记录</div>
+                        <p className="text-sm text-gray-700">{record.content}</p>
+                      </div>
+                    )}
+                    <div className="mt-2 bg-gradient-to-r from-orange-50 to-pink-50 rounded-lg p-2">
+                      <p className="text-xs text-gray-600 italic">"{record.selfDeprecatingCard}"</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8 text-gray-400">
+                  还没有相关记录
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-4 py-2 z-40">
         <div className="max-w-2xl mx-auto flex justify-around">

@@ -44,14 +44,68 @@ const SquarePage: React.FC = () => {
 
     addComment(postId, content);
     setCommentInputs({ ...commentInputs, [postId]: '' });
+    
+    // 立即更新本地状态
+    setLocalPosts(prev => prev.map(post => {
+      if (post.id === postId) {
+        return {
+          ...post,
+          comments: [
+            ...post.comments,
+            {
+              id: Date.now().toString(),
+              postId,
+              authorId: 'current_user',
+              content,
+              likes: 0,
+              isLiked: false,
+              createdAt: new Date().toISOString()
+            }
+          ]
+        };
+      }
+      return post;
+    }));
   };
 
   const handleLikeComment = (postId: string, commentId: string) => {
     likeComment(postId, commentId);
+    
+    // 立即更新本地状态
+    setLocalPosts(prev => prev.map(post => {
+      if (post.id === postId) {
+        return {
+          ...post,
+          comments: post.comments.map(comment => {
+            if (comment.id === commentId) {
+              return {
+                ...comment,
+                likes: comment.isLiked ? comment.likes - 1 : comment.likes + 1,
+                isLiked: !comment.isLiked
+              };
+            }
+            return comment;
+          })
+        };
+      }
+      return post;
+    }));
   };
 
   const handleHug = (postId: string) => {
     hugPost(postId);
+    
+    // 立即更新本地状态
+    setLocalPosts(prev => prev.map(post => {
+      if (post.id === postId) {
+        return {
+          ...post,
+          hugs: post.hasHugged ? post.hugs - 1 : post.hugs + 1,
+          hasHugged: !post.hasHugged
+        };
+      }
+      return post;
+    }));
   };
 
   const handleFavorite = (postId: string, comment: any) => {
