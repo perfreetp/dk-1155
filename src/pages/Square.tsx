@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Heart,
@@ -8,11 +8,14 @@ import {
   Bookmark,
   Send,
   X,
-  Clock
+  Clock,
+  Globe,
+  Lock,
+  ChevronDown
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
-import { LEVEL_CONFIG, SquarePost } from '../types';
-import { formatDate, generateMockSquarePosts } from '../utils';
+import { LEVEL_CONFIG, SquarePost, EmotionRecord } from '../types';
+import { formatDate } from '../utils';
 
 const SquarePage: React.FC = () => {
   const navigate = useNavigate();
@@ -31,19 +34,33 @@ const SquarePage: React.FC = () => {
 
   const [localPosts, setLocalPosts] = useState<SquarePost[]>([]);
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
-  const [activeTab, setActiveTab] = useState<'square' | 'my-responses' | 'favorites'>('square');
+  const [activeTab, setActiveTab] = useState<'public' | 'friends' | 'my-responses' | 'favorites'>('public');
+  const [responseFilter, setResponseFilter] = useState<'all' | 'comment' | 'hug' | 'like'>('all');
+  const [selectedRecord, setSelectedRecord] = useState<EmotionRecord | null>(null);
+  const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
+  const postRefs = useRef<Record<string, HTMLDivElement>>({});
 
   useEffect(() => {
     const visiblePosts = getVisiblePosts();
-    const mockPosts = generateMockSquarePosts();
+    const friendsPosts = squarePosts.filter(post => {
+      const record = records.find(r => r.id === post.recordId);
+      return record?.visibility === 'friends';
+    });
     
-    const allPosts = [...visiblePosts, ...mockPosts];
+    const allPosts = [...visiblePosts, ...squarePosts];
     const uniquePosts = allPosts.filter((post, index, self) =>
       index === self.findIndex((p) => p.id === post.id)
     );
     
     setLocalPosts(uniquePosts);
   }, [records, squarePosts, getVisiblePosts]);
+
+  useEffect(() => {
+    if (highlightedPostId && postRefs.current[highlightedPostId]) {
+      postRefs.current[highlightedPostId].scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => setHighlightedPostId(null), 3000);
+    }
+  }, [highlightedPostId]);
 
   const handleAddComment = (postId: string, recordId: string) => {
     const content = commentInputs[postId];
@@ -116,15 +133,33 @@ const SquarePage: React.FC = () => {
     addFavoriteReply(comment, comment.authorId);
   };
 
-  const myResponses = useMemo(() => {
-    return myInteractions
-      .filter(i => i.type === 'comment' || i.type === 'hug')
+  const filteredResponses = useMemo(() => {
+    let filtered = myInteractions;
+    if (responseFilter !== 'all') {
+      filtered = filtered.filter(i => i.type === responseFilter);
+    }
+    return filtered
       .map(interaction => {
         const post = localPosts.find(p => p.id === interaction.postId);
-        return { ...interaction, post };
+        const record = post ? records.find(r => r.id === post.recordId) : null;
+        return { ...interaction, post, record };
       })
-      .filter(item => item.post);
-  }, [myInteractions, localPosts]);
+      .filter(item => item.post && item.record);
+  }, [myInteractions, localPosts, records, responseFilter]);
+
+  const publicPosts = useMemo(() => {
+    return localPosts.filter(post => {
+      const record = records.find(r => r.id === post.recordId);
+      return record?.visibility === 'public';
+    });
+  }, [localPosts, records]);
+
+  const friendsPosts = useMemo(() => {
+    return localPosts.filter(post => {
+      const record = records.find(r => r.id === post.recordId);
+      return record?.visibility === 'friends';
+    });
+  }, [localPosts, records]);
 
   const COMFORT_TEMPLATES = [
     '抱抱你，能说出来已经很棒了 💪',
@@ -136,9 +171,17 @@ const SquarePage: React.FC = () => {
 
   const renderPostCard = (post: SquarePost, showActions = true) => {
     const record = records.find(r => r.id === post.recordId);
+    const isHighlighted = highlightedPostId === post.id;
     
     return (
-      <div key={post.id} className="bg-white rounded-2xl shadow-lg p-4">
+      <div
+        key={post.id}
+        ref={(el) => { if (el) postRefs.current[post.id] = el; }}
+        className={`bg-white rounded-2xl shadow-lg p-4 transition-all ${
+          isHighlighted ? 'ring-4 ring-pink-400 scale-102' : ''
+        }`}
+        style={isHighlighted ? { animation: 'pulse 2s infinite' } : undefined}
+      >
         <div className="flex items-center gap-3 mb-3">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white font-bold">
             崩
@@ -155,11 +198,22 @@ const SquarePage: React.FC = () => {
               >
                 {LEVEL_CONFIG[post.level].emoji} {LEVEL_CONFIG[post.level].label}
               </span>
+              {record?.visibility === 'friends' && (
+                <span className="px-1.5 py-0.5 rounded-full text-xs bg-blue-100 text-blue-600">
+                  好友圈
+                </span>
+              )}
             </div>
             <div className="text-xs text-gray-400">
               {formatDate(post.createdAt, 'MM月dd日 HH:mm')}
             </div>
           </div>
+          <button
+            onClick={() => setSelectedRecord(record || null)}
+            className="text-xs text-blue-500 hover:underline"
+          >
+            查看详情
+          </button>
         </div>
 
         <div className="flex flex-wrap gap-2 mb-3">
@@ -222,7 +276,7 @@ const SquarePage: React.FC = () => {
                         }`}
                       >
                         <ThumbsUp className={`w-3 h-3 ${comment.isLiked ? 'fill-current' : ''}`} />
-                        <span>{comment.likes || ''}</span>
+                        <span>{comment.likes > 0 ? comment.likes : ''}</span>
                       </button>
                       {showActions && (
                         <button
@@ -297,34 +351,46 @@ const SquarePage: React.FC = () => {
 
         <div className="mb-6 flex gap-2">
           <button
-            onClick={() => setActiveTab('square')}
+            onClick={() => setActiveTab('public')}
             className={`flex-1 py-2 rounded-full text-sm font-medium transition-all ${
-              activeTab === 'square'
+              activeTab === 'public'
                 ? 'bg-gradient-to-r from-pink-500 to-orange-500 text-white'
                 : 'bg-gray-100 text-gray-600'
             }`}
           >
-            广场动态
+            <Globe className="w-4 h-4 inline mr-1" />
+            公开
+          </button>
+          <button
+            onClick={() => setActiveTab('friends')}
+            className={`flex-1 py-2 rounded-full text-sm font-medium transition-all ${
+              activeTab === 'friends'
+                ? 'bg-gradient-to-r from-blue-500 to-purple-500 text-white'
+                : 'bg-gray-100 text-gray-600'
+            }`}
+          >
+            <Users className="w-4 h-4 inline mr-1" />
+            好友圈
           </button>
           <button
             onClick={() => setActiveTab('my-responses')}
-            className={`flex-1 py-2 rounded-full text-sm font-medium transition-all flex items-center justify-center gap-2 ${
+            className={`flex-1 py-2 rounded-full text-sm font-medium transition-all flex items-center justify-center gap-1 ${
               activeTab === 'my-responses'
                 ? 'bg-gradient-to-r from-pink-500 to-orange-500 text-white'
                 : 'bg-gray-100 text-gray-600'
             }`}
           >
             <Clock className="w-4 h-4" />
-            我的回应
-            {myResponses.length > 0 && (
+            我的
+            {myInteractions.length > 0 && (
               <span className="bg-white text-pink-500 rounded-full px-1.5 text-xs">
-                {myResponses.length}
+                {myInteractions.length}
               </span>
             )}
           </button>
           <button
             onClick={() => setActiveTab('favorites')}
-            className={`flex-1 py-2 rounded-full text-sm font-medium transition-all flex items-center justify-center gap-2 ${
+            className={`flex-1 py-2 rounded-full text-sm font-medium transition-all flex items-center justify-center gap-1 ${
               activeTab === 'favorites'
                 ? 'bg-gradient-to-r from-pink-500 to-orange-500 text-white'
                 : 'bg-gray-100 text-gray-600'
@@ -335,7 +401,7 @@ const SquarePage: React.FC = () => {
           </button>
         </div>
 
-        {activeTab === 'square' && (
+        {activeTab === 'public' && (
           <div className="space-y-4">
             <div className="bg-white rounded-2xl shadow-lg p-4">
               <div className="flex items-center gap-2 mb-3">
@@ -344,17 +410,17 @@ const SquarePage: React.FC = () => {
                 </div>
               </div>
               <p className="text-sm text-gray-600">
-                点击卡片查看详情，给崩溃的朋友发送抱抱 🤗，也可以留下温暖的安慰
+                给崩溃的朋友发送抱抱 🤗，也可以留下温暖的安慰
               </p>
             </div>
 
-            {localPosts.map(post => renderPostCard(post))}
+            {publicPosts.map(post => renderPostCard(post))}
 
-            {localPosts.length === 0 && (
+            {publicPosts.length === 0 && (
               <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
                 <div className="text-5xl mb-4">🌙</div>
-                <h3 className="text-lg font-medium text-gray-800 mb-2">还没有崩溃记录</h3>
-                <p className="text-gray-500 text-sm mb-4">去打个卡吧，或者分享你的记录到广场</p>
+                <h3 className="text-lg font-medium text-gray-800 mb-2">还没有公开记录</h3>
+                <p className="text-gray-500 text-sm mb-4">去打个卡并设为公开吧</p>
                 <button
                   onClick={() => navigate('/')}
                   className="px-6 py-2 bg-gradient-to-r from-pink-500 to-orange-500 text-white rounded-full text-sm font-medium hover:shadow-lg transition-all"
@@ -366,60 +432,118 @@ const SquarePage: React.FC = () => {
           </div>
         )}
 
-        {activeTab === 'my-responses' && (
+        {activeTab === 'friends' && (
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">我的回应记录 🌸</h3>
-            
-            {myResponses.length > 0 ? (
-              myResponses.map((response) => (
-                <div key={response.id} className="bg-white rounded-2xl shadow-lg p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-600">
-                      {response.type === 'comment' ? '💬 安慰' : '🤗 抱抱'}
-                    </span>
-                    <span className="text-xs text-gray-400">
-                      {formatDate(response.createdAt, 'MM月dd日 HH:mm')}
-                    </span>
-                  </div>
-                  
-                  {response.type === 'comment' && response.content && (
-                    <p className="text-gray-700 mb-2">"{response.content}"</p>
-                  )}
-                  
-                  {response.post && (
-                    <div className="bg-gray-50 rounded-xl p-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-lg">{LEVEL_CONFIG[response.post.level].emoji}</span>
-                        <span className="text-xs text-gray-500">
-                          崩溃等级: {LEVEL_CONFIG[response.post.level].label}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap gap-1">
-                        {response.post.tags.map(tag => (
-                          <span key={tag} className="px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded text-xs">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                      <button
-                        onClick={() => {
-                          setActiveTab('square');
-                        }}
-                        className="mt-2 text-xs text-blue-500 hover:underline"
-                      >
-                        查看原动态 →
-                      </button>
-                    </div>
-                  )}
+            <div className="bg-white rounded-2xl shadow-lg p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="bg-gradient-to-r from-blue-100 to-purple-100 rounded-lg px-3 py-1 text-xs text-gray-600">
+                  🔒 小圈子
                 </div>
-              ))
-            ) : (
+              </div>
+              <p className="text-sm text-gray-600">
+                仅好友可见的崩溃记录，在这里互相支持
+              </p>
+            </div>
+
+            {friendsPosts.map(post => renderPostCard(post))}
+
+            {friendsPosts.length === 0 && (
               <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
-                <div className="text-5xl mb-4">📝</div>
-                <p className="text-gray-500">还没有回应过任何人</p>
-                <p className="text-gray-400 text-sm mt-2">去广场给崩溃的朋友一些温暖吧</p>
+                <div className="text-5xl mb-4">👥</div>
+                <h3 className="text-lg font-medium text-gray-800 mb-2">还没有好友圈记录</h3>
+                <p className="text-gray-500 text-sm">把记录设为好友圈可见</p>
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === 'my-responses' && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl shadow p-3">
+              <div className="flex gap-2">
+                {(['all', 'comment', 'hug', 'like'] as const).map(filter => (
+                  <button
+                    key={filter}
+                    onClick={() => setResponseFilter(filter)}
+                    className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all ${
+                      responseFilter === filter
+                        ? 'bg-gradient-to-r from-pink-500 to-orange-500 text-white'
+                        : 'bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    {filter === 'all' ? '全部' : filter === 'comment' ? '安慰' : filter === 'hug' ? '抱抱' : '点赞'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="relative">
+              <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gray-200" />
+              
+              {filteredResponses.length > 0 ? (
+                filteredResponses.map((response, index) => (
+                  <div key={response.id} className="relative pl-12 pb-4">
+                    <div className={`absolute left-4 w-5 h-5 rounded-full flex items-center justify-center text-white text-xs ${
+                      response.type === 'comment' ? 'bg-blue-500' :
+                      response.type === 'hug' ? 'bg-pink-500' : 'bg-green-500'
+                    }`}>
+                      {response.type === 'comment' ? '💬' : response.type === 'hug' ? '🤗' : '👍'}
+                    </div>
+                    
+                    <div className="bg-white rounded-xl shadow p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">
+                          {response.type === 'comment' ? '💬 安慰' : response.type === 'hug' ? '🤗 抱抱' : '👍 点赞'}
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          {formatDate(response.createdAt, 'MM月dd日 HH:mm')}
+                        </span>
+                      </div>
+                      
+                      {response.type === 'comment' && response.content && (
+                        <p className="text-gray-700 mb-3">"{response.content}"</p>
+                      )}
+                      
+                      <div className="bg-gray-50 rounded-lg p-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-lg">{response.post ? LEVEL_CONFIG[response.post.level].emoji : ''}</span>
+                          <div>
+                            <div className="text-xs text-gray-500">
+                              {response.record?.date ? formatDate(response.record.date, 'MM月dd日') : ''}
+                            </div>
+                            <div className="text-xs text-gray-400">
+                              {response.post?.tags.join(', ')}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            if (response.post) {
+                              setHighlightedPostId(response.post.id);
+                              setActiveTab(response.record?.visibility === 'public' ? 'public' : 'friends');
+                              setTimeout(() => {
+                                if (postRefs.current[response.post!.id]) {
+                                  postRefs.current[response.post!.id].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                }
+                              }, 100);
+                            }
+                          }}
+                          className="mt-2 text-xs text-blue-500 hover:underline"
+                        >
+                          查看原动态 →
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="bg-white rounded-2xl shadow-lg p-8 text-center">
+                  <div className="text-5xl mb-4">📝</div>
+                  <p className="text-gray-500">还没有回应过任何人</p>
+                  <p className="text-gray-400 text-sm mt-2">去广场给崩溃的朋友一些温暖吧</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -445,6 +569,121 @@ const SquarePage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {selectedRecord && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50 p-4"
+          onClick={() => setSelectedRecord(null)}
+        >
+          <div
+            className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md max-h-screen overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 bg-white p-4 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">互动明细</h3>
+                <p className="text-xs text-gray-500">{formatDate(selectedRecord.date, 'MM月dd日')}</p>
+              </div>
+              <button
+                onClick={() => setSelectedRecord(null)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+            
+            <div className="p-4 space-y-4">
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50">
+                <span className="text-3xl">{LEVEL_CONFIG[selectedRecord.level].emoji}</span>
+                <div>
+                  <div className="font-medium text-gray-800">
+                    {LEVEL_CONFIG[selectedRecord.level].label}
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    {selectedRecord.visibility === 'public' && (
+                      <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-600">
+                        <Globe className="w-3 h-3 inline mr-1" />公开
+                      </span>
+                    )}
+                    {selectedRecord.visibility === 'friends' && (
+                      <span className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-600">
+                        <Users className="w-3 h-3 inline mr-1" />好友圈
+                      </span>
+                    )}
+                    {selectedRecord.visibility === 'private' && (
+                      <span className="px-2 py-0.5 rounded-full text-xs bg-gray-200 text-gray-600">
+                        <Lock className="w-3 h-3 inline mr-1" />仅自己
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {selectedRecord.tags.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {selectedRecord.tags.map(tag => (
+                    <span key={tag} className="px-2 py-1 bg-orange-50 text-orange-600 rounded-full text-xs">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {selectedRecord.trigger && (
+                <div>
+                  <div className="text-xs text-gray-500 mb-1">触发事件</div>
+                  <p className="text-sm text-gray-700">{selectedRecord.trigger}</p>
+                </div>
+              )}
+
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-medium text-gray-800 mb-3">互动统计</h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="text-center p-3 bg-pink-50 rounded-xl">
+                    <div className="text-2xl">🤗</div>
+                    <div className="text-lg font-bold text-pink-600">
+                      {squarePosts.find(p => p.recordId === selectedRecord.id)?.hugs || 0}
+                    </div>
+                    <div className="text-xs text-gray-500">收到抱抱</div>
+                  </div>
+                  <div className="text-center p-3 bg-blue-50 rounded-xl">
+                    <div className="text-2xl">💬</div>
+                    <div className="text-lg font-bold text-blue-600">
+                      {squarePosts.find(p => p.recordId === selectedRecord.id)?.comments.length || 0}
+                    </div>
+                    <div className="text-xs text-gray-500">收到安慰</div>
+                  </div>
+                  <div className="text-center p-3 bg-green-50 rounded-xl">
+                    <div className="text-2xl">👍</div>
+                    <div className="text-lg font-bold text-green-600">
+                      {squarePosts.find(p => p.recordId === selectedRecord.id)?.comments.reduce((sum, c) => sum + c.likes, 0) || 0}
+                    </div>
+                    <div className="text-xs text-gray-500">收到点赞</div>
+                  </div>
+                </div>
+              </div>
+
+              {(squarePosts.find(p => p.recordId === selectedRecord.id)?.comments.length || 0) > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium text-gray-800 mb-2">安慰详情</h4>
+                  <div className="space-y-2">
+                    {squarePosts.find(p => p.recordId === selectedRecord.id)?.comments.map(comment => (
+                      <div key={comment.id} className="bg-gray-50 rounded-lg p-3">
+                        <p className="text-sm text-gray-700">{comment.content}</p>
+                        <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
+                          <span>{formatDate(comment.createdAt, 'MM月dd日')}</span>
+                          <span>·</span>
+                          <span>👍 {comment.likes}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-4 py-2 z-40">
         <div className="max-w-2xl mx-auto flex justify-around">

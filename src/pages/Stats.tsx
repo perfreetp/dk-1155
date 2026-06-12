@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart, Download, Calendar, Tag, X } from 'lucide-react';
+import { Heart, Download, Calendar, Tag, X, Globe, Users } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { LEVEL_CONFIG } from '../types';
 import {
@@ -57,32 +57,41 @@ const StatsPage: React.FC = () => {
   }, [records]);
   
   const shareEffectStats = useMemo(() => {
+    const calculateStats = (filteredRecords: typeof records) => {
+      let totalHugs = 0;
+      let totalComments = 0;
+      const tagHugMap: Record<string, number> = {};
+      const tagCommentMap: Record<string, number> = {};
+      
+      filteredRecords.forEach(record => {
+        const post = squarePosts.find(p => p.recordId === record.id);
+        if (post) {
+          totalHugs += post.hugs;
+          totalComments += post.comments.length;
+          record.tags.forEach(tag => {
+            tagHugMap[tag] = (tagHugMap[tag] || 0) + post.hugs;
+            tagCommentMap[tag] = (tagCommentMap[tag] || 0) + post.comments.length;
+          });
+        }
+      });
+      
+      const tagEngagement = Object.keys(tagHugMap).map(tag => ({
+        tag,
+        hugs: tagHugMap[tag],
+        comments: tagCommentMap[tag] || 0,
+        total: (tagHugMap[tag] || 0) + (tagCommentMap[tag] || 0)
+      })).sort((a, b) => b.total - a.total);
+      
+      return { totalHugs, totalComments, tagEngagement };
+    };
+    
     const publicRecords = records.filter(r => r.visibility === 'public');
-    let totalHugs = 0;
-    let totalComments = 0;
-    const tagHugMap: Record<string, number> = {};
-    const tagCommentMap: Record<string, number> = {};
+    const friendsRecords = records.filter(r => r.visibility === 'friends');
     
-    publicRecords.forEach(record => {
-      const post = squarePosts.find(p => p.recordId === record.id);
-      if (post) {
-        totalHugs += post.hugs;
-        totalComments += post.comments.length;
-        record.tags.forEach(tag => {
-          tagHugMap[tag] = (tagHugMap[tag] || 0) + post.hugs;
-          tagCommentMap[tag] = (tagCommentMap[tag] || 0) + post.comments.length;
-        });
-      }
-    });
-    
-    const tagEngagement = Object.keys(tagHugMap).map(tag => ({
-      tag,
-      hugs: tagHugMap[tag],
-      comments: tagCommentMap[tag] || 0,
-      total: (tagHugMap[tag] || 0) + (tagCommentMap[tag] || 0)
-    })).sort((a, b) => b.total - a.total);
-    
-    return { totalHugs, totalComments, tagEngagement };
+    return {
+      public: calculateStats(publicRecords),
+      friends: calculateStats(friendsRecords)
+    };
   }, [records, squarePosts]);
 
   const COLORS = ['#FF8A80', '#81C784', '#9575CD', '#4FC3F7', '#FFD54F', '#FF8A65', '#4DB6AC', '#BA68C8', '#7986CB', '#4DD0E1'];
@@ -462,43 +471,86 @@ const StatsPage: React.FC = () => {
             <span className="text-xl">📢</span>
             分享效果
           </h3>
-          {shareEffectStats.totalHugs > 0 || shareEffectStats.totalComments > 0 ? (
-            <>
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div className="bg-pink-50 rounded-xl p-3 text-center">
-                  <div className="text-2xl font-bold text-pink-500">{shareEffectStats.totalHugs}</div>
-                  <div className="text-xs text-gray-600">收到抱抱</div>
-                </div>
-                <div className="bg-blue-50 rounded-xl p-3 text-center">
-                  <div className="text-2xl font-bold text-blue-500">{shareEffectStats.totalComments}</div>
-                  <div className="text-xs text-gray-600">收到安慰</div>
-                </div>
+          
+          <div className="space-y-4">
+            <div className="border-b pb-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Globe className="w-4 h-4 text-green-500" />
+                <span className="text-sm font-medium text-gray-700">公开广场</span>
               </div>
-              
-              {shareEffectStats.tagEngagement.length > 0 && (
-                <div>
-                  <p className="text-sm text-gray-600 mb-2">最容易得到安慰的标签：</p>
-                  <div className="space-y-2">
-                    {shareEffectStats.tagEngagement.slice(0, 3).map((item, index) => (
-                      <div key={item.tag} className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-full bg-orange-100 text-orange-600 text-xs flex items-center justify-center font-bold">
-                          {index + 1}
-                        </span>
-                        <span className="flex-1 text-sm text-gray-700">{item.tag}</span>
-                        <span className="text-xs text-gray-400">
-                          🤗 {item.hugs} 💬 {item.comments}
-                        </span>
-                      </div>
-                    ))}
+              {shareEffectStats.public.totalHugs > 0 || shareEffectStats.public.totalComments > 0 ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div className="bg-pink-50 rounded-xl p-3 text-center">
+                      <div className="text-xl font-bold text-pink-600">{shareEffectStats.public.totalHugs}</div>
+                      <div className="text-xs text-gray-500">收到抱抱</div>
+                    </div>
+                    <div className="bg-blue-50 rounded-xl p-3 text-center">
+                      <div className="text-xl font-bold text-blue-600">{shareEffectStats.public.totalComments}</div>
+                      <div className="text-xs text-gray-500">收到安慰</div>
+                    </div>
                   </div>
-                </div>
+                  {shareEffectStats.public.tagEngagement.length > 0 && (
+                    <div>
+                      <p className="text-xs text-gray-500 mb-2">最容易得到安慰的标签：</p>
+                      <div className="space-y-1">
+                        {shareEffectStats.public.tagEngagement.slice(0, 2).map((item, index) => (
+                          <div key={item.tag} className="flex items-center gap-2 text-xs">
+                            <span className="w-4 h-4 rounded-full bg-green-100 text-green-600 text-center leading-4">
+                              {index + 1}
+                            </span>
+                            <span className="flex-1 text-gray-600">{item.tag}</span>
+                            <span className="text-gray-400">🤗{item.hugs} 💬{item.comments}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs text-gray-400 text-center py-2">还没有公开记录</p>
               )}
-            </>
-          ) : (
-            <div className="text-center py-6 text-gray-400 text-sm">
-              还没有公开记录，分享后查看效果
             </div>
-          )}
+
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Users className="w-4 h-4 text-blue-500" />
+                <span className="text-sm font-medium text-gray-700">好友圈</span>
+              </div>
+              {shareEffectStats.friends.totalHugs > 0 || shareEffectStats.friends.totalComments > 0 ? (
+                <>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div className="bg-pink-50 rounded-xl p-3 text-center">
+                      <div className="text-xl font-bold text-pink-600">{shareEffectStats.friends.totalHugs}</div>
+                      <div className="text-xs text-gray-500">收到抱抱</div>
+                    </div>
+                    <div className="bg-blue-50 rounded-xl p-3 text-center">
+                      <div className="text-xl font-bold text-blue-600">{shareEffectStats.friends.totalComments}</div>
+                      <div className="text-xs text-gray-500">收到安慰</div>
+                    </div>
+                  </div>
+                  {shareEffectStats.friends.tagEngagement.length > 0 && (
+                    <div>
+                      <p className="text-xs text-gray-500 mb-2">最容易得到安慰的标签：</p>
+                      <div className="space-y-1">
+                        {shareEffectStats.friends.tagEngagement.slice(0, 2).map((item, index) => (
+                          <div key={item.tag} className="flex items-center gap-2 text-xs">
+                            <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-600 text-center leading-4">
+                              {index + 1}
+                            </span>
+                            <span className="flex-1 text-gray-600">{item.tag}</span>
+                            <span className="text-gray-400">🤗{item.hugs} 💬{item.comments}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs text-gray-400 text-center py-2">还没有好友圈记录</p>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="bg-white rounded-2xl shadow-lg p-4">
